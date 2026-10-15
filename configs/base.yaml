@@ -1,0 +1,132 @@
+# Central configuration for the federated unlearning experiments.
+# All scripts in scripts/ load this file. Override individual values via CLI.
+#
+# The hyperparameters below are the ones used for the results in the paper.
+# Where a method's published (classifier-domain) settings caused divergence
+# on the autoencoder, the rescaled values used here are noted inline.
+
+experiment:
+  name: "fed_unlearn_fets_flair_2d"
+  seed: 42
+  # Full determinism: seeded per-worker dataloader shuffling + deterministic
+  # cuDNN algorithms. Identical configs then produce identical results, which
+  # matters when comparing effects close to the run-to-run noise floor.
+  # Costs some throughput; set false only if you need the speed.
+  deterministic: true
+  output_dir: "./outputs"
+
+data:
+  processed_dir: "./data/processed"
+  modality: "flair"
+  slice_size: 128
+  n_clients: 6
+  # Slices whose brain region occupies less than this fraction are dropped.
+  min_brain_fraction: 0.20
+  # Client-level train/val/test split (fractions of CASES, not slices).
+  train_frac: 0.70
+  val_frac: 0.15
+  test_frac: 0.15
+
+model:
+  # 2D convolutional (spatial) autoencoder, Baur 2021 spatial variant:
+  # fully convolutional, 256 x 8 x 8 spatial bottleneck (no dense layer).
+  in_channels: 1
+  base_channels: 32
+  latent_channels: 256
+  # Reconstruction loss: 'l1' (Baur 2021 finding) or 'l2'.
+  loss: "l1"
+
+training:
+  # Local training per client per round.
+  local_epochs: 5
+  local_batch_size: 32
+  local_lr: 0.0001
+  weight_decay: 0.00001
+  # Federation.
+  num_rounds: 100
+  # Fraction of clients sampled per round (1.0 = all clients).
+  fraction_fit: 1.0
+  fraction_evaluate: 1.0
+
+unlearning:
+  # Which client to forget. Overridden per-run via CLI.
+  # Paper headline regime is the dominant client (client 0).
+  forgotten_client: 0
+
+  gradient_ascent:
+    # Halimi et al. 2022.
+    # Published classifier-domain settings (ascent_steps=10, lr=1e-4)
+    # caused ~16x baseline reconstruction-error divergence on the AE.
+    # The rescaled values below match the AE's error scale.
+    ascent_steps: 2
+    ascent_lr: 0.00001
+    finetune_rounds: 1
+
+  kd_unlearn:
+    # Wu et al. 2022. Federated variant (see unlearning/kd_unlearn.py).
+    distill_rounds: 20
+    distill_lr: 0.0001
+    # Balance: match teacher on remaining clients vs push away on forgotten.
+    # Published settings (alpha_push=0.5, clip=1.0) caused the student to
+    # diverge ~10x; rescaling alpha_push and using a binding clip at the
+    # AE's error scale keeps divergence controlled (push distance ~0.02).
+    alpha_match: 1.0
+    alpha_push: 0.05
+    # Active divergence cap on the push term (binds at the AE error scale).
+    tau_push: 0.05
+    # --- size-aware push weight (see unlearning/push_scaling.py) ---
+    # 'fixed'             : alpha_push used as-is (published behaviour)
+    # 'fraction'          : scale by the forgotten client's data share (baseline)
+    # 'teacher_signal'    : scale by cross-client teacher memorisation (proposed)
+    # 'teacher_gap'       : within-client train-vs-heldout gap (difficulty-controlled)
+    # 'oracle_divergence' : scale by teacher-oracle gap (oracle-informed ceiling)
+    push_scaling: "fixed"
+    # Reference points at which each signal yields full push strength.
+    scale_fraction_ref: 0.5      # a 50%-of-data client gets the full push
+    scale_signal_ref: 0.10       # 10% relative recon advantage = full push
+    scale_gap_ref: 0.10          # 10% train-vs-heldout gap = full push
+    scale_divergence_ref: 0.004  # teacher-oracle W1 at which push is full
+    # Held-out split used by 'teacher_gap' / 'oracle_divergence'. 'test' keeps
+    # the calibration disjoint from the fidelity metric, which scores val.
+    scale_heldout_split: "test"
+    # Minimum held-out slices required for the within-client gap to be trusted.
+    # Below this the estimate is split-noise dominated and the scale falls back
+    # to 0 (no push). Small FeTS clients (~32 cases) fall well below this.
+    min_heldout_slices: 200
+    # Device for the one-off scale measurement. Keep 'cpu': running it on the
+    # GPU claims driver-process memory that Ray needs for the client actors.
+    scale_device: "cpu"
+    # Batches per client for the scale measurement (20 x 32 = 640 slices).
+    scale_max_batches: 20
+
+  fed_eraser:
+    # Liu et al. 2021. Faithful calibrated replay (see fed_eraser.py).
+    # Local probe steps per remaining client per replayed round: a few steps
+    # give a far less noisy magnitude estimate than a single step, which
+    # matters for stability over a long sequential replay on a conv-AE.
+    probe_steps: 5
+    # Clip the per-round magnitude ratio to [1/max_scale, max_scale] so one
+    # noisy probe cannot inject an exploding update that compounds.
+    max_scale: 10.0
+    # Replay every k-th cached round (1 = replay all rounds). A larger stride
+    # (e.g. 5) reduces error compounding and is the accelerated-FedEraser
+    # variant; use it if a full replay is unstable.
+    replay_stride: 1
+    # Full FedAvg rounds on remaining clients after replay (utility recovery).
+    calibration_rounds: 20
+    calibration_lr: 0.0001
+
+evaluation:
+  # Pixel-level AUROC and Dice: threshold selection.
+  threshold_search: "f1"  # 'f1', 'youden', or fixed numeric
+  # Unlearning efficacy.
+  distance_metric: "wasserstein"  # 'wasserstein' or 'ks'
+  # Membership inference.
+  mia_n_shadow_models: 0  # 0 = simple loss-threshold attack
+  mia_n_seeds: 3
+
+reproduce:
+  # Seeds used for the multi-seed results in the paper.
+  seeds: [42, 123, 2024]
+  # Forgotten-client regimes reported: dominant (0) and minor (2).
+  forgotten_client_regimes: [0, 2]

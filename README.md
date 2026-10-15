@@ -40,7 +40,7 @@ evaluation/unlearning_efficacy.py Wasserstein and KS distance to the oracle
 evaluation/membership_inference.py loss-threshold membership-inference attack
 scripts/                          runnable pipeline stages
 tests/test_methods.py             13 CPU-only correctness tests
-results/                          per-run evaluation JSONs, one per (seed, client)
+results/                          aggregated three-seed results (per-run JSONs are written here by a run)
 analysis/comparative_analysis.py  rebuilds the paper's tables
 analysis/make_paper_figures.py    rebuilds Figures 1-3 exactly as published
 notebooks/                        the runs as executed, and a reproduction notebook
@@ -137,8 +137,9 @@ figures can be checked without reproducing any training.
 
 The three-seed results are currently held as literals at the top of
 `analysis/comparative_analysis.py`, copied from the per-run
-`evaluation_results_forgot_*.json` files in `results/`. Those JSONs are the
-primary record; the literals exist so the analysis runs without them present.
+`evaluation_results_forgot_*.json` files the runs produced and summarised in
+`results/aggregated_results.json`. Those per-run JSONs are the primary record; the
+literals exist so the analysis runs without them present.
 
 ---
 

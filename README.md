@@ -299,3 +299,7 @@ only in the released implementation can skip it.
 
 MIT (see `LICENSE`). The FeTS 2022 data is subject to its own terms and is not
 distributed here.
+
+## Author
+
+Oluwapelumi Alagbe ([@alagbeooao](https://github.com/alagbeooao))
